@@ -14,7 +14,8 @@ from orddc2024.predictors.yolov5_predictor import Yolov5Predictor
 def download_models():
     print("Downloading models using gdown...")
     # url = 'https://drive.google.com/uc?id=1s4Lr7BO0LsDtFW0VpXueFX15h3oA2grE' # Phase1_bak
-    url = 'https://drive.google.com/uc?id=1-DpjN_gtfPtymu_rtwUMxl4_zV4CKjco' # Phase1
+    # url = 'https://drive.google.com/uc?id=1-DpjN_gtfPtymu_rtwUMxl4_zV4CKjco' # Phase1
+    url = 'https://drive.google.com/uc?id=1D_ZE4iKZ1YlU3AOdiUXnX2UJFvsvBRiR' # Phase1 updated link
     output_zip = './models_ph1.zip'
     subprocess.run(['gdown', url, '--output', output_zip], check=True)
     shutil.unpack_archive(output_zip, './')
