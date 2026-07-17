@@ -6,6 +6,7 @@ data/
 *.zip
 *.pt
 runs/
+eval_runs/
 models/
 
 archive/*

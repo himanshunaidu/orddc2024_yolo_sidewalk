@@ -14,7 +14,7 @@ import torch.distributed as dist
 
 from ultralytics.data import build_dataloader, build_yolo_dataset, converter
 from ultralytics.engine.validator import BaseValidator
-from ultralytics.utils import LOGGER, RANK, nms, ops
+from ultralytics.utils import LOGGER, RANK, ops
 from ultralytics.utils.checks import check_requirements
 from ultralytics.utils.metrics import ConfusionMatrix, DetMetrics, box_iou
 from ultralytics.utils.plotting import plot_images
@@ -28,8 +28,8 @@ class ValidationResult:
     """Results returned by CustomValidator.evaluate()."""
 
     overall: dict[str, float]
-    per_class: list[dict[str, Any]]
-    per_image: dict[str, dict[str, float | int]]
+    # per_class: list[dict[str, Any]]
+    # per_image: dict[str, dict[str, float | int]]
     confusion_matrix: np.ndarray
     metrics: DetMetrics
     
@@ -125,6 +125,20 @@ class CustomValidator(BaseValidator):
         self._validate_collection(predictions, len(image_paths), "predictions")
         self.reset()
         total_targets = 0
+        
+        tp_parts: list[np.ndarray] = []
+        target_boxes_parts: list[np.ndarray] = []
+        target_cls_parts: list[np.ndarray] = []
+        conf_parts: list[np.ndarray] = []
+        pred_boxes_parts: list[np.ndarray] = []
+        pred_cls_parts: list[np.ndarray] = []
+        target_cls_parts: list[np.ndarray] = []
+        
+        target_boxes_tensor_parts: list[torch.Tensor] = []
+        target_cls_tensor_parts: list[torch.Tensor] = []
+        pred_boxes_tensor_parts: list[torch.Tensor] = []
+        pred_conf_tensor_parts: list[torch.Tensor] = []
+        pred_cls_tensor_parts: list[torch.Tensor] = []
 
         for image_index, image_path in enumerate(image_paths):
             if not image_path.is_file():
@@ -140,7 +154,7 @@ class CustomValidator(BaseValidator):
                 predictions, image_path, image_index, "predictions"
             )
 
-            target = self._prepare_ground_truth(
+            target_boxes, target_cls = self._prepare_ground_truth(
                 gt_record,
                 box_format=ground_truth_box_format,
                 image_width=image_width,
@@ -148,7 +162,7 @@ class CustomValidator(BaseValidator):
                 label_offset=ground_truth_label_offset,
                 image_name=image_path.name,
             )
-            prediction = self._prepare_prediction(
+            pred_boxes, pred_cls, pred_conf = self._prepare_prediction(
                 pred_record,
                 box_format=prediction_box_format,
                 image_width=image_width,
@@ -156,9 +170,39 @@ class CustomValidator(BaseValidator):
                 label_offset=prediction_label_offset,
                 image_name=image_path.name,
             )
+            print(pred_boxes, pred_conf, pred_cls, target_boxes, target_cls)
+            tp = self._process_batch(
+                pred_boxes, pred_conf, pred_cls, target_boxes, target_cls
+            )
 
-            total_targets += int(target["cls"].numel())
-            self.update_metrics(prediction, target, image_name=image_path.name)
+            total_targets += int(target_cls.numel())
+            # self.update_metrics(prediction, target, image_name=image_path.name)
+            
+            tp_parts.append(tp)
+            target_boxes_parts.append(target_boxes.cpu().numpy())
+            conf_parts.append(pred_conf.cpu().numpy())
+            pred_boxes_parts.append(pred_boxes.cpu().numpy())
+            pred_cls_parts.append(pred_cls.cpu().numpy())
+            target_cls_parts.append(target_cls.cpu().numpy())
+            
+            target_boxes_tensor_parts.append(target_boxes)
+            target_cls_tensor_parts.append(target_cls)
+            pred_boxes_tensor_parts.append(pred_boxes)
+            pred_conf_tensor_parts.append(pred_conf)
+            pred_cls_tensor_parts.append(pred_cls)
+        
+        tp = np.concatenate(tp_parts, axis=0)
+        target_boxes = np.concatenate(target_boxes_parts, axis=0)
+        conf = np.concatenate(conf_parts, axis=0)
+        pred_boxes = np.concatenate(pred_boxes_parts, axis=0)
+        pred_cls = np.concatenate(pred_cls_parts, axis=0)
+        target_cls = np.concatenate(target_cls_parts, axis=0)
+        
+        target_boxes_tensor = torch.cat(target_boxes_tensor_parts, dim=0)
+        pred_boxes_tensor = torch.cat(pred_boxes_tensor_parts, dim=0)
+        pred_conf_tensor = torch.cat(pred_conf_tensor_parts, dim=0)
+        pred_cls_tensor = torch.cat(pred_cls_tensor_parts, dim=0)
+        target_cls_tensor = torch.cat(target_cls_tensor_parts, dim=0)
 
         if total_targets == 0:
             raise ValueError(
@@ -166,14 +210,19 @@ class CustomValidator(BaseValidator):
                 "calculated without target annotations."
             )
 
-        overall = self.get_stats()
+        self.process_metrics(
+            tp=tp, conf=conf, pred_cls=pred_cls, target_cls=target_cls,
+            target_boxes_tensor=target_boxes_tensor, target_cls_tensor=target_cls_tensor,
+            pred_boxes_tensor=pred_boxes_tensor, pred_conf_tensor=pred_conf_tensor, pred_cls_tensor=pred_cls_tensor
+        )
+        # overall = self.get_stats()
         self.finalize_metrics()
-        self.print_results()
+        # self.print_results()
 
         return ValidationResult(
-            overall=dict(overall),
-            per_class=self.metrics.summary(),
-            per_image=dict(getattr(self.metrics.box, "image_metrics", {})),
+            overall=dict(self.metrics.results_dict),
+            # per_class=self.metrics.summary(),
+            # per_image=dict(getattr(self.metrics.box, "image_metrics", {})),
             confusion_matrix=self.confusion_matrix.matrix.copy(),
             metrics=self.metrics,
         )
@@ -209,80 +258,134 @@ class CustomValidator(BaseValidator):
         self.seen = 0
         self.metrics = DetMetrics(names=self.names)
         self.metrics.names = self.names
-        self.metrics.clear_stats()
+        # self.metrics.clear_stats()
         if hasattr(self.metrics, "clear_image_metrics"):
             self.metrics.clear_image_metrics()
         self.confusion_matrix = ConfusionMatrix(
-            names=self.names,
+            # names=self.names,
+            nc=self.nc,
             task="detect",
-            save_matches=False,
-        )
-        self.plots = {}
-        
-    def update_metrics(
-        self,
-        prediction: dict[str, torch.Tensor],
-        target: dict[str, torch.Tensor],
-        *,
-        image_name: str,
-    ) -> None:
-        """Update DetMetrics and ConfusionMatrix for one image."""
-        self.seen += 1
-        target_cls_numpy = target["cls"].cpu().numpy()
-        no_pred = prediction["cls"].numel() == 0
-
-        self.metrics.update_stats(
-            {
-                **self._process_batch(prediction, target),
-                "target_cls": target_cls_numpy,
-                "target_img": np.unique(target_cls_numpy),
-                "conf": (
-                    np.zeros(0, dtype=np.float32)
-                    if no_pred
-                    else prediction["conf"].cpu().numpy()
-                ),
-                "pred_cls": (
-                    np.zeros(0, dtype=np.float32)
-                    if no_pred
-                    else prediction["cls"].cpu().numpy()
-                ),
-                "im_name": image_name,
-            }
-        )
-
-        self.confusion_matrix.process_batch(
-            prediction,
-            target,
             conf=self.confusion_conf,
             iou_thres=self.confusion_iou,
+            # save_matches=False,
         )
+        self.plots = {}
+    
+    def process_metrics(
+        self,
+        tp: np.ndarray,
+        conf: np.ndarray,
+        pred_cls: np.ndarray,
+        target_cls: np.ndarray,
+        target_boxes_tensor: torch.Tensor,
+        target_cls_tensor: torch.Tensor,
+        pred_boxes_tensor: torch.Tensor,
+        pred_conf_tensor: torch.Tensor,
+        pred_cls_tensor: torch.Tensor
+    ) -> None:
+        """Process metrics for a batch of predictions and targets."""
+        self.metrics.process(tp=tp, conf=conf, pred_cls=pred_cls, target_cls=target_cls)
+        # def process_batch(self, detections, gt_bboxes, gt_cls):
+        # """
+        # Update confusion matrix for object detection task.
+
+        # Args:
+        #     detections (Array[N, 6] | Array[N, 7]): Detected bounding boxes and their associated information.
+        #                               Each row should contain (x1, y1, x2, y2, conf, class)
+        #                               or with an additional element `angle` when it's obb.
+        #     gt_bboxes (Array[M, 4]| Array[N, 5]): Ground truth bounding boxes with xyxy/xyxyr format.
+        #     gt_cls (Array[M]): The class labels.
+        # """
+        detections = torch.cat([pred_boxes_tensor, pred_conf_tensor.unsqueeze(1), pred_cls_tensor.unsqueeze(1)], dim=1)
+        gt_bboxes = target_boxes_tensor
+        gt_cls = target_cls_tensor
+        self.confusion_matrix.process_batch(
+            detections=detections,
+            gt_bboxes=gt_bboxes,
+            gt_cls=gt_cls,
+        )
+    
+    # def update_metrics(
+    #     self,
+    #     prediction: dict[str, torch.Tensor],
+    #     target: dict[str, torch.Tensor],
+    #     *,
+    #     image_name: str,
+    # ) -> None:
+    #     """Update DetMetrics and ConfusionMatrix for one image."""
+    #     self.seen += 1
+    #     target_cls_numpy = target["cls"].cpu().numpy()
+    #     no_pred = prediction["cls"].numel() == 0
+
+    #     self.metrics.update_stats(
+    #         {
+    #             **self._process_batch(prediction, target),
+    #             "target_cls": target_cls_numpy,
+    #             "target_img": np.unique(target_cls_numpy),
+    #             "conf": (
+    #                 np.zeros(0, dtype=np.float32)
+    #                 if no_pred
+    #                 else prediction["conf"].cpu().numpy()
+    #             ),
+    #             "pred_cls": (
+    #                 np.zeros(0, dtype=np.float32)
+    #                 if no_pred
+    #                 else prediction["cls"].cpu().numpy()
+    #             ),
+    #             "im_name": image_name,
+    #         }
+    #     )
+
+    #     self.confusion_matrix.process_batch(
+    #         prediction,
+    #         target,
+    #         # class labels
+    #         target_cls=target_cls_numpy,
+    #     )
     
     def _process_batch(
         self,
-        prediction: dict[str, torch.Tensor],
-        target: dict[str, torch.Tensor],
-    ) -> dict[str, np.ndarray]:
+        pred_boxes: torch.Tensor,
+        pred_conf: torch.Tensor,
+        pred_cls: torch.Tensor,
+        target_boxes: torch.Tensor,
+        target_cls: torch.Tensor,
+    ) -> np.ndarray:
         """Create the [num_predictions, 10] TP matrix used by DetMetrics."""
-        num_predictions = int(prediction["cls"].shape[0])
-        if target["cls"].numel() == 0 or num_predictions == 0:
-            return {
-                "tp": np.zeros((num_predictions, self.niou), dtype=bool)
-            }
+        num_predictions = int(pred_cls.shape[0])
+        if target_cls.numel() == 0 or num_predictions == 0:
+            return np.zeros((num_predictions, self.niou), dtype=bool)
 
-        iou = box_iou(target["bboxes"], prediction["bboxes"])
-        correct = self.match_predictions(
-            prediction["cls"], target["cls"], iou
-        )
-        return {"tp": correct.cpu().numpy()}
+        iou = box_iou(target_boxes, pred_boxes)
+        correct = self.match_predictions(pred_cls, target_cls, iou)
+        return correct.cpu().numpy()
     
-    def get_stats(self) -> dict[str, float]:
-        """Process accumulated statistics and return Ultralytics result keys."""
-        self.metrics.process(
-            save_dir=self.save_dir,
-            plot=bool(self.args.plots),
-            on_plot=self.on_plot,
-        )
-        return self.metrics.results_dict
+    # def _process_batch(
+    #     self,
+    #     prediction: dict[str, torch.Tensor],
+    #     target: dict[str, torch.Tensor],
+    # ) -> dict[str, np.ndarray]:
+    #     """Create the [num_predictions, 10] TP matrix used by DetMetrics."""
+    #     num_predictions = int(prediction["cls"].shape[0])
+    #     if target["cls"].numel() == 0 or num_predictions == 0:
+    #         return {
+    #             "tp": np.zeros((num_predictions, self.niou), dtype=bool)
+    #         }
+
+    #     iou = box_iou(target["bboxes"], prediction["bboxes"])
+    #     correct = self.match_predictions(
+    #         prediction["cls"], target["cls"], iou
+    #     )
+    #     return {"tp": correct.cpu().numpy()}
+    
+    # def get_stats(self) -> dict[str, float]:
+    #     """Process accumulated statistics and return Ultralytics result keys."""
+    #     self.metrics.process(
+    #         save_dir=self.save_dir,
+    #         plot=bool(self.args.plots),
+    #         on_plot=self.on_plot,
+    #     )
+    #     return self.metrics.results_dict
     
     def finalize_metrics(self) -> None:
         """Attach plots and confusion matrix to the metrics object."""
@@ -297,35 +400,35 @@ class CustomValidator(BaseValidator):
         self.metrics.confusion_matrix = self.confusion_matrix
         self.metrics.save_dir = self.save_dir
         
-    def print_results(self) -> None:
-        """Print overall and per-class metrics in Ultralytics' style."""
-        if self.metrics.nt_per_class is None:
-            return
+    # def print_results(self) -> None:
+    #     """Print overall and per-class metrics in Ultralytics' style."""
+    #     if self.metrics.nt_per_class is None:
+    #         return
 
-        pf = "%22s" + "%11i" * 2 + "%11.3g" * len(self.metrics.keys)
-        total_instances = int(self.metrics.nt_per_class.sum())
-        LOGGER.info(
-            pf
-            % (
-                "all",
-                self.seen,
-                total_instances,
-                *self.metrics.mean_results(),
-            )
-        )
+    #     pf = "%22s" + "%11i" * 2 + "%11.3g" * len(self.metrics.keys)
+    #     total_instances = int(self.metrics.nt_per_class.sum())
+    #     LOGGER.info(
+    #         pf
+    #         % (
+    #             "all",
+    #             self.seen,
+    #             total_instances,
+    #             *self.metrics.mean_results(),
+    #         )
+    #     )
 
-        if self.args.verbose and self.nc > 1:
-            for metric_index, class_id in enumerate(self.metrics.ap_class_index):
-                class_id = int(class_id)
-                LOGGER.info(
-                    pf
-                    % (
-                        self.names[class_id],
-                        int(self.metrics.nt_per_image[class_id]),
-                        int(self.metrics.nt_per_class[class_id]),
-                        *self.metrics.class_result(metric_index),
-                    )
-                )
+    #     if self.args.verbose and self.nc > 1:
+    #         for metric_index, class_id in enumerate(self.metrics.ap_class_index):
+    #             class_id = int(class_id)
+    #             LOGGER.info(
+    #                 pf
+    #                 % (
+    #                     self.names[class_id],
+    #                     int(self.metrics.nt_per_image[class_id]),
+    #                     int(self.metrics.nt_per_class[class_id]),
+    #                     *self.metrics.class_result(metric_index),
+    #                 )
+    #             )
     
     def _prepare_ground_truth(
         self,
@@ -336,7 +439,7 @@ class CustomValidator(BaseValidator):
         image_height: int,
         label_offset: int,
         image_name: str,
-    ) -> dict[str, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         boxes = self._convert_boxes_to_xyxyn(
             record.get("bboxes", []),
             box_format=box_format,
@@ -352,7 +455,7 @@ class CustomValidator(BaseValidator):
         )
         if self.args.single_cls:
             classes.zero_()
-        return {"bboxes": boxes, "cls": classes}
+        return boxes, classes
     
     def _prepare_prediction(
         self,
@@ -363,7 +466,7 @@ class CustomValidator(BaseValidator):
         image_height: int,
         label_offset: int,
         image_name: str,
-    ) -> dict[str, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         boxes = self._convert_boxes_to_xyxyn(
             record.get("bboxes", []),
             box_format=box_format,
@@ -413,7 +516,7 @@ class CustomValidator(BaseValidator):
                 confidence[order],
             )
 
-        return {"bboxes": boxes, "conf": confidence, "cls": classes}
+        return boxes, classes, confidence
     
     def _convert_boxes_to_xyxyn(
         self,
@@ -572,9 +675,9 @@ class CustomValidator(BaseValidator):
         }
     
     @staticmethod
-    def load_yolo_ground_truths(
+    def load_ground_truths(
         images: Sequence[str | Path],
-        labels_dir: str | Path,
+        labels_dir: str | Path | None = None,
         *,
         allow_missing_files: bool = True,
     ) -> dict[str, dict[str, Any]]:
@@ -584,12 +687,16 @@ class CustomValidator(BaseValidator):
         ORDDC-style class tokens such as `3:low` are accepted; only the numeric
         class ID before ':' is used for detection evaluation.
         """
-        labels_dir = Path(labels_dir)
+        labels_dir = Path(labels_dir) if labels_dir is not None else None
         ground_truths: dict[str, dict[str, Any]] = {}
 
         for image_value in images:
             image_path = Path(image_value)
-            label_path = labels_dir / f"{image_path.stem}.txt"
+            # label_path = labels_dir / f"{image_path.stem}.txt"
+            image_dir = image_path.parent
+            label_placeholder_path = image_dir.parent / "labels" / f"{image_path.stem}.txt"
+            label_path = labels_dir / f"{image_path.stem}.txt" if labels_dir is not None else label_placeholder_path
+            
             classes: list[int] = []
             boxes: list[list[float]] = []
 
