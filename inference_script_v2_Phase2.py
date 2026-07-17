@@ -4,7 +4,9 @@ import yaml
 import sys
 import subprocess
 import shutil
+import numpy as np
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
 
 from ensemble_boxes import weighted_boxes_fusion, nms, non_maximum_weighted, soft_nms
 from orddc2024.predictors.ultralytics_predictor import UltralyticsPredictor
@@ -55,20 +57,20 @@ def run_prediction(framework, predictor_class, model_params, images_path):
 
     return combined_predictions, images
 
-def main(yaml_file, images_path, output_csv):
+def main(yaml_file, images_path, output_csv, output_dir="output_images"):
     start_time = datetime.now()
     print(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     config = load_yaml_config(yaml_file)
     ultra_models_params = config['models'].get('yolov8', [])
-    yolov5_weights_params = config['models'].get('yolov5', [])
+    # yolov5_weights_params = config['models'].get('yolov5', [])
     # yolox_weights_params = config['models'].get('yolox', [])
     print("YOLOv8 Model Parameters:", ultra_models_params)
-    print("YOLOv5 Model Parameters:", yolov5_weights_params)
+    # print("YOLOv5 Model Parameters:", yolov5_weights_params)
     # print("YOLOX Model Parameters:", yolox_weights_params)
     predictions = {
         'yolov8': (UltralyticsPredictor, ultra_models_params),
-        'yolov5': (Yolov5Predictor, yolov5_weights_params),
+        # 'yolov5': (Yolov5Predictor, yolov5_weights_params),
         # 'yolox': (MegviiPredictor, yolox_weights_params)
     }
     for framework, (predictor_class, model_params) in predictions.items():
@@ -104,11 +106,11 @@ def main(yaml_file, images_path, output_csv):
             framework = futures[future]
             # try:
             results[framework] = future.result()
-            predictor_instance = predictions[framework][0]("repo_name", framework) 
+            predictor_instance = predictions[framework][0]("repo_name", framework)
             # except Exception as e:
             #     print(f"{framework} prediction failed with error: {e}")
     yolov8_predictions, yolov8_images = results.get('yolov8', (([], [], []), []))
-    yolov5_predictions, yolov5_images = results.get('yolov5', (([], [], []), []))
+    # yolov5_predictions, yolov5_images = results.get('yolov5', (([], [], []), []))
     # yolox_predictions, yolox_images = results.get('yolox', (([], [], []), []))
     
     end_time = datetime.now()  
@@ -118,14 +120,14 @@ def main(yaml_file, images_path, output_csv):
     
     ## Combine predictions
     print("Ensemble Predictions")
-    boxes_list = yolov8_predictions[0] + yolov5_predictions[0] # + yolox_predictions[0]
-    scores_list = yolov8_predictions[1] + yolov5_predictions[1] # + yolox_predictions[1]
-    labels_list = yolov8_predictions[2] + yolov5_predictions[2] # + yolox_predictions[2]
+    boxes_list = yolov8_predictions[0] #+ yolov5_predictions[0] # + yolox_predictions[0]
+    scores_list = yolov8_predictions[1] #+ yolov5_predictions[1] # + yolox_predictions[1]
+    labels_list = yolov8_predictions[2] #+ yolov5_predictions[2] # + yolox_predictions[2]
 
     if yolov8_images:
         images = yolov8_images
-    elif yolov5_images:
-        images = yolov5_images
+    # elif yolov5_images:
+    #     images = yolov5_images
     # elif yolox_images:
     #     images = yolox_images
     else:
@@ -158,7 +160,8 @@ def main(yaml_file, images_path, output_csv):
             img_width, img_height = predictor_instance.get_image_size(img_path)
 
             result_list = [
-                f"{int(label)} {int(box[0] * img_width)} {int(box[1] * img_height)} {int(box[2] * img_width)} {int(box[3] * img_height)}"
+                # f"{int(label)} {int(box[0] * img_width)} {int(box[1] * img_height)} {int(box[2] * img_width)} {int(box[3] * img_height)}"
+                f"{int(label)} {box[0]:.6f} {box[1]:.6f} {box[2]:.6f} {box[3]:.6f}"
                 for box, score, label in zip(ensembled_boxes[img_idx], ensembled_scores[img_idx], ensembled_labels[img_idx])
             ]
 
@@ -166,7 +169,25 @@ def main(yaml_file, images_path, output_csv):
             trimmed_result_str = " ".join(result_str.split()[:2500])
 
             f.write(f"{img_name},{trimmed_result_str}\n")
-
+            
+    # Visualize the bounding boxes on all images and save them
+    os.makedirs(output_dir, exist_ok=True)
+    for i in range(len(images)):
+        img_path = images[i]
+        img_name = os.path.basename(img_path)
+        
+        img = Image.open(img_path).convert("RGB")
+        
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.load_default()
+        img_width, img_height = predictor_instance.get_image_size(img_path)
+        
+        for box, score, label in zip(ensembled_boxes[i], ensembled_scores[i], ensembled_labels[i]):
+            x1, y1, x2, y2 = predictor_instance.denormalize_box(box, img_width, img_height)
+            draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
+            draw.text((x1, y1), f"{int(label)}: {score:.2f}", fill="red", font=font)
+        
+        img.save(os.path.join(output_dir, f"result_{img_name}"))
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
@@ -176,11 +197,12 @@ if __name__ == "__main__":
     yaml_file = "./model_ph2.yaml"
     images_path = sys.argv[1]
     output_csv = sys.argv[2]
+    output_dir = "output_images"
     
     ## Check if the models directory exists, if not download the models
     if not os.path.exists('./models_ph2'):
         print("Models directory './models_ph2' does not exist.")
         download_models()
         
-    main(yaml_file, images_path, output_csv)
+    main(yaml_file, images_path, output_csv, output_dir)
     print("models_ph2_Prediction done.")

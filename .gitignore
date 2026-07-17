@@ -1,3 +1,9 @@
 .DS_Store
 __pycache__/
 RDD2022/
+
+data/
+*.zip
+*.pt
+runs/
+models/

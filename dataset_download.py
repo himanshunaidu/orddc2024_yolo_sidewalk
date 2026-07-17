@@ -13,6 +13,11 @@ def download_file(url, dest_folder, dest_filename):
     block_size = 1024
     progress = 0
     
+    print("Status:", response.status_code)
+    print("Content-Type:", response.headers.get("content-type"))
+    print("Location:", response.headers.get("location"))
+    print("Retry-After:", response.headers.get("retry-after"))
+    
     if response.status_code == 200:
         os.makedirs(dest_folder, exist_ok=True)
         file_path = os.path.join(dest_folder, dest_filename)

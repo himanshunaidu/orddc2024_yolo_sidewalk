@@ -135,7 +135,7 @@ def main(yaml_file, images_path, output_csv):
     ## Weighted Boxes Fusion (WBF)
     ensembled_boxes, ensembled_scores, ensembled_labels = [], [], []
     weights = [1] * len(boxes_list)
-    iou_thr = 0.999
+    iou_thr = 0.9
     skip_box_thr = 0.0001
     sigma=0.1
     
