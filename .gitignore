@@ -7,3 +7,17 @@ data/
 *.pt
 runs/
 models/
+
+archive/*
+train/archive/*
+
+# Python projects
+*.egg
+*.egg-info/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+dist/
+build/
