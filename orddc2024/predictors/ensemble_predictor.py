@@ -1,4 +1,6 @@
 from .base_predictor import Predictor
+# from .ultralytics_predictor import UltralyticsPredictor
+# from .yolov5_predictor import Yolov5Predictor
 from ultralytics import YOLO
 
 import os
@@ -72,7 +74,13 @@ class EnsemblePredictor(Predictor):
             raise ValueError("iou_thr must be in [0, 1]")
         if not 0 <= self.skip_box_thr <= 1:
             raise ValueError("skip_box_thr must be in [0, 1]")
-        
+    
+    def load_one_model(self, weight):
+        raise NotImplementedError(
+            "EnsemblePredictor does not implement load_one_model. "
+            "Use child predictors instead."
+        )
+    
     def _load_member(
         self,
         index: int,
@@ -372,6 +380,12 @@ class EnsemblePredictor(Predictor):
             scores[order].astype(float).tolist(),
             labels[order].astype(int).tolist(),
         )
+        
+    def predict_one_model(self, model, image):
+        raise NotImplementedError(
+            "EnsemblePredictor does not implement _predict_one_model. "
+            "Use child predictors instead."
+        )
     
     def predict(self, batch_size: int = 128):
         """
@@ -411,5 +425,4 @@ class EnsemblePredictor(Predictor):
         self.raw_predictions = raw
         self.last_predictions = fused
         return fused
-    
     
