@@ -7,8 +7,6 @@ from ultralytics import YOLO
 import argparse
 from typing import Optional
 
-# FINE_TUNE_OPTIONS = ["fine_tune_all", "freeze_backbone", "adapter"]
-
 def parse_freeze_arg(value: str):
     """
     Accepts:

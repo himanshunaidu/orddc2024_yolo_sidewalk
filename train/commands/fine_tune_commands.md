@@ -97,7 +97,7 @@ python yolov8_finetune.py \
   --patience 100 \
   --optimizer SGD \
   --freeze 0 \
-  --option A_full_soft \
+  --option A_full_soft_5 \
   --tag "lr1e-3" \
   --device 0
 

@@ -36,7 +36,7 @@ class WrappedYoloV8:
     
 if __name__ == "__main__":
     # yaml_file = "./model_ph2.yaml"
-    yaml_file = "./train_scripts/model_lab_train.yaml"
+    yaml_file = "./model_train.yaml"
     
     config = load_yaml_config(yaml_file)
     ultra_models_params = config['models'].get('yolov8', [])

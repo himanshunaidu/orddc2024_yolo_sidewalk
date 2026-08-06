@@ -1,0 +1,8 @@
+models:
+  yolov8:
+    - weight: './runs/iospm_surface_integrity_orddc_sidewalk/archive/A_full_soft_weights_yolov8x_batch_16_lr0_0.001_lrf_0.01_imgsz_640_opt_SGD_lr1e-3/weights/yolov8x_batch_16_A_full_soft.pt'
+      imgsz: 640
+      conf: 0.25
+      iou: 0.9
+      agnostic_nms: True
+      augment: True

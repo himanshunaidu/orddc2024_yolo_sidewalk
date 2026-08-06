@@ -176,3 +176,6 @@ python Phase1_script_detect_nano_32.py
 ```
 Submission csv files will be saved under `train_scripts\CSV_results_nano` folder
 
+### CoreML
+
+Recommended version: coremltools 7.2
