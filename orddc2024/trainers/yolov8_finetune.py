@@ -61,34 +61,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lrf", type=float, default=0.01)
     parser.add_argument("--optimizer", type=str, default="SGD")
 
-    parser.add_argument(
-        "--patience",
-        type=int,
-        default=25,
-    )
-    parser.add_argument(
-        "--save-period",
-        type=int,
-        default=25,
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-    )
+    parser.add_argument("--patience", type=int, default=25)
+    parser.add_argument("--save-period", type=int, default=25)
+    parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument(
-        "--deterministic",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--amp",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--exist-ok",
-        action="store_true",
-    )
+    parser.add_argument("--deterministic", action="store_true")
+    parser.add_argument("--amp", action="store_true")
+    parser.add_argument("--exist-ok", action="store_true")
 
     # Augmentation parameters preserved from the original fine-tuning script.
     parser.add_argument("--hsv-h", type=float, default=0.015)
@@ -103,11 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fliplr", type=float, default=0.5)
     parser.add_argument("--flipud", type=float, default=0.0)
 
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="0",
-    )
+    parser.add_argument("--device", type=str, default="0")
 
     parser.add_argument(
         "--tag",
@@ -122,9 +97,7 @@ def parse_args() -> argparse.Namespace:
         default="{}",
         help=(
             "JSON object of additional keyword arguments forwarded directly "
-            "to YOLO.train(). This allows later HPO work to add Ultralytics "
-            "parameters such as mosaic, mixup, close_mosaic, weight_decay, "
-            "warmup_epochs, etc. without changing this CLI."
+            "to YOLO.train()."
         ),
     )
 
@@ -166,8 +139,6 @@ def train(args: argparse.Namespace) -> None:
 
     extra_args = parse_extra_args(args.extra_args_json)
 
-    # These are controlled explicitly by the shared Trainer contract and
-    # should not be silently overridden through extra_args.
     reserved_keys = {
         "data",
         "task",
@@ -222,10 +193,7 @@ def train(args: argparse.Namespace) -> None:
         "lr0": args.lr0,
         "lrf": args.lrf,
         "cos_lr": True,
-
-        # Current experiments always fine-tune the full model.
         "freeze": 0,
-
         "patience": args.patience,
         "save": True,
         "save_period": args.save_period,
@@ -233,8 +201,6 @@ def train(args: argparse.Namespace) -> None:
         "seed": args.seed,
         "deterministic": args.deterministic,
         "amp": args.amp,
-
-        # Augmentation
         "hsv_h": args.hsv_h,
         "hsv_s": args.hsv_s,
         "hsv_v": args.hsv_v,
@@ -253,9 +219,6 @@ def train(args: argparse.Namespace) -> None:
     model.train(**train_kwargs)
     elapsed_time = time.time() - start_time
 
-    # Ultralytics normally writes to project/name. model.trainer.save_dir is
-    # used when available so metadata records the actual location selected by
-    # the framework.
     trainer_save_dir = getattr(
         getattr(model, "trainer", None),
         "save_dir",
@@ -269,7 +232,11 @@ def train(args: argparse.Namespace) -> None:
     )
 
     run_dir = run_dir.expanduser().resolve()
+
     weights_dir = run_dir / "weights"
+    predictions_dir = run_dir / "predictions"
+    predictions_dir.mkdir(parents=True, exist_ok=True)
+
     best_weights_path = weights_dir / "best.pt"
     last_weights_path = weights_dir / "last.pt"
     results_file = run_dir / "results.csv"
@@ -318,6 +285,11 @@ def train(args: argparse.Namespace) -> None:
         "best_weights": str(best_weights_path),
         "last_weights": str(last_weights_path),
         "results_file": str(results_file),
+
+        # The backend does not generate prediction caches itself. It only
+        # establishes the standard artifact location that the control-side
+        # TrainingResult/PredictionResult code will use later.
+        "predictions_dir": str(predictions_dir),
     }
 
     metadata_path = run_dir / "training_metadata.json"
@@ -347,6 +319,7 @@ def train(args: argparse.Namespace) -> None:
     print(f"Best weights:       {best_weights_path}")
     print(f"Last weights:       {last_weights_path}")
     print(f"Results CSV:        {results_file}")
+    print(f"Predictions dir:    {predictions_dir}")
     print(f"Training metadata:  {metadata_path}")
     print("#" * 72)
 

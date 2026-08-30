@@ -5,9 +5,10 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 
 from config.backends import BACKENDS
+from ..predictions.prediction_result import PredictionResult
 
 
 @dataclass(slots=True)
@@ -68,8 +69,10 @@ class TrainingResult:
     """
     Standard result returned by every Trainer implementation.
 
-    `metrics` is intentionally generic so different training frameworks can
-    expose the metrics they produce without changing the orchestration layer.
+    Training artifacts and prediction artifacts deliberately remain separate:
+    `PredictionResult` owns prediction contents/formats, while TrainingResult
+    merely provides a convenient place to cache and discover predictions that
+    belong to this training run.
     """
 
     backend: str
@@ -82,8 +85,180 @@ class TrainingResult:
     results_file: Path | None = None
     metadata_file: Path | None = None
 
+    predictions_dir: Path | None = None
+    prediction_caches: dict[str, Path] = field(default_factory=dict)
+
     metrics: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.run_dir = Path(self.run_dir)
+
+        if self.best_weights is not None:
+            self.best_weights = Path(self.best_weights)
+
+        if self.last_weights is not None:
+            self.last_weights = Path(self.last_weights)
+
+        if self.results_file is not None:
+            self.results_file = Path(self.results_file)
+
+        if self.metadata_file is not None:
+            self.metadata_file = Path(self.metadata_file)
+
+        if self.predictions_dir is None:
+            self.predictions_dir = self.run_dir / "predictions"
+        else:
+            self.predictions_dir = Path(self.predictions_dir)
+
+        self.prediction_caches = {
+            str(name): Path(path)
+            for name, path in self.prediction_caches.items()
+        }
+
+    def cache_prediction(
+        self,
+        name: str,
+        prediction: PredictionResult,
+        *,
+        overwrite: bool = True,
+        save_orddc_folder: bool = False,
+        dataset_root: str | Path | None = None,
+        include_scores: bool = True,
+    ) -> Path:
+        """
+        Save a PredictionResult under this training run.
+
+        Example:
+            result.cache_prediction("val", prediction)
+
+        produces:
+            <run_dir>/predictions/val.npz
+
+        Optionally also creates:
+            <run_dir>/predictions/val_txt/
+
+        using PredictionResult.save_orddc_folder().
+        """
+        cache_name = self._validate_cache_name(name)
+
+        assert self.predictions_dir is not None
+        self.predictions_dir.mkdir(parents=True, exist_ok=True)
+
+        cache_path = self.predictions_dir / f"{cache_name}.npz"
+
+        if cache_path.exists() and not overwrite:
+            raise FileExistsError(
+                f"Prediction cache already exists: {cache_path}"
+            )
+
+        prediction.save_npz(cache_path)
+        self.prediction_caches[cache_name] = cache_path
+
+        if save_orddc_folder:
+            if dataset_root is None:
+                raise ValueError(
+                    "dataset_root is required when save_orddc_folder=True"
+                )
+
+            prediction.save_orddc_folder(
+                self.predictions_dir / f"{cache_name}_txt",
+                dataset_root=dataset_root,
+                include_scores=include_scores,
+            )
+
+        return cache_path
+
+    def load_prediction(
+        self,
+        name: str,
+    ) -> PredictionResult:
+        """
+        Load a cached PredictionResult associated with this training run.
+        """
+        cache_name = self._validate_cache_name(name)
+
+        cache_path = self.prediction_caches.get(cache_name)
+
+        if cache_path is None:
+            assert self.predictions_dir is not None
+            candidate = self.predictions_dir / f"{cache_name}.npz"
+
+            if candidate.is_file():
+                cache_path = candidate
+                self.prediction_caches[cache_name] = candidate
+
+        if cache_path is None or not cache_path.is_file():
+            raise FileNotFoundError(
+                f"No cached prediction named {cache_name!r} exists for "
+                f"training run {self.run_name!r}."
+            )
+
+        return PredictionResult.load_npz(cache_path)
+
+    def refresh_prediction_caches(self) -> dict[str, Path]:
+        """
+        Re-scan <run_dir>/predictions for .npz caches.
+
+        This is useful when prediction files were created or regenerated in a
+        separate process after the TrainingResult object was first created.
+        """
+        assert self.predictions_dir is not None
+
+        if not self.predictions_dir.is_dir():
+            self.prediction_caches = {}
+            return self.prediction_caches
+
+        self.prediction_caches = {
+            path.stem: path
+            for path in sorted(self.predictions_dir.glob("*.npz"))
+            if path.is_file()
+        }
+
+        return dict(self.prediction_caches)
+
+    def has_prediction(self, name: str) -> bool:
+        """
+        Return True if the named .npz prediction cache exists.
+        """
+        cache_name = self._validate_cache_name(name)
+
+        cache_path = self.prediction_caches.get(cache_name)
+        if cache_path is not None and cache_path.is_file():
+            return True
+
+        assert self.predictions_dir is not None
+        candidate = self.predictions_dir / f"{cache_name}.npz"
+
+        if candidate.is_file():
+            self.prediction_caches[cache_name] = candidate
+            return True
+
+        return False
+
+    @staticmethod
+    def _validate_cache_name(name: str) -> str:
+        """
+        Keep cache names simple so all caches stay directly under predictions/.
+        """
+        name = str(name).strip()
+
+        if not name:
+            raise ValueError("Prediction cache name cannot be empty")
+
+        if Path(name).name != name:
+            raise ValueError(
+                "Prediction cache name must be a simple file name "
+                "without directory components"
+            )
+
+        if name.endswith(".npz"):
+            name = name[:-4]
+
+        if not name:
+            raise ValueError("Prediction cache name cannot be empty")
+
+        return name
 
 
 class Trainer(ABC):
@@ -92,7 +267,7 @@ class Trainer(ABC):
 
     The parent process never imports the model framework. Each concrete trainer
     launches its training script with the Python interpreter configured for its
-    backend in configs/backends.py.
+    backend in config/backends.py.
     """
 
     def __init__(
@@ -156,18 +331,20 @@ class Trainer(ABC):
             check=True,
         )
 
-        return self.collect_result(
+        result = self.collect_result(
             config=config,
             run_name=run_name,
         )
 
+        # Pick up any prediction caches that may already exist, for example
+        # when re-opening an existing run with exist_ok=True.
+        result.refresh_prediction_caches()
+
+        return result
+
     def build_run_name(self, config: TrainingConfig) -> str:
         """
         Build a deterministic run name.
-
-        This intentionally mirrors the naming convention currently used by
-        yolov8_finetune.py so the wrapper can locate the generated run without
-        requiring that script to be rewritten first.
         """
         weights_name = Path(str(config.weights)).stem
 
@@ -245,8 +422,6 @@ class Trainer(ABC):
         """
         Translate TrainingConfig into the CLI understood by this backend's
         training script.
-
-        The Python executable and script path are added by Trainer.train().
         """
         raise NotImplementedError
 
