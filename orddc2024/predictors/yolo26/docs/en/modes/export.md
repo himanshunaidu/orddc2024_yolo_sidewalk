@@ -6,7 +6,7 @@ keywords: YOLO26, Model Export, ONNX, TensorRT, CoreML, Ultralytics, AI, Machine
 
 # Model Export with Ultralytics YOLO
 
-<img width="1024" src="https://cdn.jsdelivr.net/gh/ultralytics/assets@main/docs/ultralytics-yolov8-ecosystem-integrations.avif" alt="Ultralytics YOLO ecosystem and integrations">
+<img width="1024" src="https://cdn.ul.run/i/f874ab850f33f361d01a01e9a8c98655.avif" alt="Ultralytics YOLO ecosystem and integrations">
 
 ## Introduction
 
@@ -80,7 +80,7 @@ Adjusting these parameters allows for customization of the export process to fit
 
 ## Export Formats
 
-Available YOLO26 export formats are in the table below. You can export to any format using the `format` argument, i.e., `format='onnx'` or `format='engine'`. You can predict or validate directly on exported models, i.e., `yolo predict model=yolo26n.onnx`. Usage examples are shown for your model after export completes. Models can also be exported directly from the browser on [Ultralytics Platform](https://platform.ultralytics.com) without any local setup.
+Available YOLO26 export formats are in the table below. You can export to any format using the `format` argument, i.e., `format='onnx'` or `format='engine'`. You can predict or validate directly on exported models, i.e., `yolo predict model=yolo26n.onnx`. Usage examples are shown for your model after export completes. Models can also be exported directly from the browser on [Ultralytics Platform](../platform/train/models.md#export-model) without any local setup.
 
 {% include "macros/export-table.md" %}
 
@@ -121,8 +121,13 @@ Not every export format supports every precision. Explicit `quantize` requests e
 | DEEPX         | ❌                | ❌                | ✅ auto    | ❌                | DEEPX export requires INT8; it is auto-enabled when unset.                                                                                                                                                                                              |
 | Qualcomm QNN  | ❌                | ❌                | ❌         | ✅ auto           | QNN HTP export is fixed to INT8 weights with 16-bit activations.                                                                                                                                                                                        |
 | LiteRT        | ✅                | ❌                | ✅         | ✅                | Static INT8 (`8`) and `"w8a16"` (int8 weights + **int16** activations) use calibration data; also supports `"w8a32"` dynamic INT8 (no calibration). `quantize=16` is not a separate export; an FP32 model runs in FP16 at runtime via the GPU delegate. |
+| Huawei Ascend | ❌                | ✅ auto           | ❌         | ❌                | Ascend AI Core convolutions accept only FP16/INT8 inputs, so ATC compiles FP16; it is auto-enabled when unset.                                                                                                                                          |
 
 For INT8 and W8A16 exports, provide representative calibration data with `data`, such as `data="coco8.yaml"`, unless the target integration documents a default or auto-enabled behavior. The LiteRT `"w8a32"` (dynamic INT8) scheme needs no calibration data.
+
+## What's Next
+
+Find your deployment target's integration guide — [ONNX](../integrations/onnx.md), [TensorRT](../integrations/tensorrt.md), [CoreML](../integrations/coreml.md), and more are on the [full integrations list](../integrations/index.md) — for how to run the exported model.
 
 ## FAQ
 
@@ -229,7 +234,7 @@ When you export a YOLO model to formats like ONNX or TensorRT, the output tensor
 
 For **YOLO26 detection models** (e.g., `yolo26n.pt`), end-to-end export is enabled by default in formats that support it, so the output is shaped like `(batch_size, max_detections, 6)` with `[x1, y1, x2, y2, confidence, class_id]` values. With the default `max_det=300`, this is commonly `(batch_size, 300, 6)`. Some constrained formats automatically fall back to the traditional output layout when end-to-end operators are unsupported.
 
-For non-end-to-end detection models, or YOLO26 models exported with `end2end=False`, the output is typically a single tensor shaped like `(batch_size, 4 + num_classes, num_predictions)` where the channels represent box coordinates plus per-class scores, and `num_predictions` depends on the export input resolution (and can be dynamic).
+For non-end-to-end detection models, or YOLO26 models exported with `end2end=False`, the output is typically a single tensor shaped like `(batch_size, 4 + num_classes, num_predictions)` where the channels represent box coordinates plus per-class scores, and `num_predictions` depends on the export input resolution (and can be dynamic). The [End-to-End Detection guide](../guides/end2end-detection.md) covers which formats keep the end-to-end output.
 
 For **segmentation models** (e.g., `yolo26n-seg.pt`), you'll typically get two outputs: the first tensor shaped like `(batch_size, 4 + num_classes + mask_dim, num_predictions)` (boxes, class scores, and mask coefficients), and the second tensor shaped like `(batch_size, mask_dim, proto_h, proto_w)` containing mask prototypes used with the coefficients to generate instance masks. Sizes depend on the export input resolution (and can be dynamic).
 

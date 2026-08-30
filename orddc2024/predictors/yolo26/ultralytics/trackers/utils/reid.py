@@ -4,8 +4,8 @@
 * `.pt` YOLO checkpoints — loaded via `YOLO()`; embeddings are pulled from the second-to-last
 layer through the predictor's `embed=[...]` argument (works with classification and ReID
 backbones).
-* Any other extension (`.torchscript`, `.onnx`, `.engine`, `.openvino`, …) — loaded via
-`AutoBackend`; the model is expected to output the embedding tensor directly.
+* Compatible exported models (`.torchscript`, `.onnx`, `.engine`, OpenVINO model directories, …) —
+loaded via `AutoBackend`; the model is expected to output the embedding tensor directly.
 """
 
 from __future__ import annotations
@@ -160,10 +160,10 @@ def smooth_feature(
         alpha (float): EMA weight on the existing `smooth` (``1.0`` keeps it unchanged).
 
     Returns:
-        curr (np.ndarray | None): The normalized current feature, or None when `feat` is zero-norm (carries no
-            appearance information, so the caller should leave its features unchanged).
-        smooth (np.ndarray | None): The updated, renormalized smoothed feature.
+        curr (np.ndarray | None): The normalized float32 feature, or None when `feat` has zero norm.
+        smooth (np.ndarray | None): The updated, normalized float32 feature.
     """
+    feat = np.asarray(feat, dtype=np.float32)  # the stored state is float32 whatever dtype the ReID backend returned
     norm = np.linalg.norm(feat)
     if norm < 1e-12:  # zero-norm feature has no appearance info; signal the caller to keep its current features
         return None, smooth

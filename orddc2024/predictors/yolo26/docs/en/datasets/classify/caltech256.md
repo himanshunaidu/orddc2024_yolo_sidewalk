@@ -6,7 +6,6 @@ creator:
     url: https://data.caltech.edu/records/nyy15-4j048
 license:
     name: CC-BY-4.0
-    url: https://creativecommons.org/licenses/by/4.0/
 description: Train YOLO image classification models on Caltech-256, a benchmark of 30,607 images across 256 object categories plus a background class, with automatic 80/20 splitting.
 keywords: Caltech-256, dataset, image classification, object recognition, machine learning, computer vision, YOLO, deep learning, AI
 ---
@@ -14,6 +13,8 @@ keywords: Caltech-256, dataset, image classification, object recognition, machin
 # Caltech-256 Dataset
 
 The [Caltech-256](https://data.caltech.edu/records/nyy15-4j048) dataset is a classic [image classification](https://www.ultralytics.com/glossary/image-classification) benchmark of 30,607 images spanning 256 object categories plus one background class. Each category holds at least 80 images of real-world objects — animals, vehicles, household items, and people — making it a larger, more challenging successor to [Caltech-101](caltech101.md) for object recognition models.
+
+Explore [Caltech-256 on Ultralytics Platform](https://platform.ultralytics.com/ultralytics/datasets/caltech256) to preview samples, inspect dataset statistics, and clone it for training.
 
 <p align="center">
   <br>
@@ -80,7 +81,7 @@ Train a YOLO model on Caltech-256 for 100 [epochs](https://www.ultralytics.com/g
 
 The Caltech-256 dataset contains high-quality color images of various objects, providing a well-structured dataset for [image classification](https://www.ultralytics.com/glossary/image-classification) tasks. Here are some examples of images from the dataset ([credit](https://ml4a.github.io/demos/tsne_viewer.html)):
 
-![Caltech-256 image classification dataset samples](https://cdn.jsdelivr.net/gh/ultralytics/assets@main/docs/caltech256-sample-image.avif)
+![Caltech-256 image classification dataset samples](https://cdn.ul.run/i/f8d04e02a43b5c41b2373fc4e7bc61c6.avif)
 
 The samples show the diversity and complexity of the objects in the Caltech-256 dataset, underlining the value of a varied dataset for training robust object recognition models.
 

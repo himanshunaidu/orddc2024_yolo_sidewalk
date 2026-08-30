@@ -106,7 +106,9 @@ def test_export_engine_matrix(task, dynamic, quantize, batch):
         simplify=True,
         device=DEVICES[0],
     )
-    YOLO(file)([SOURCE] * batch, imgsz=64 if dynamic else 32, device=DEVICES[0])  # exported model inference
+    model = YOLO(file)
+    model([SOURCE] * batch, imgsz=64 if dynamic else 32, device=DEVICES[0])  # exported model inference
+    model.val(data=TASK2DATA[task], imgsz=32, device=DEVICES[0], batch=batch)  # exported model validation
     Path(file).unlink()  # cleanup
     if quantize == 8:
         Path(file).with_suffix(".cache").unlink(missing_ok=True)  # cleanup TensorRT 7-10 INT8 calibration cache
@@ -128,7 +130,7 @@ def test_semantic_loss_all_ignore_amp(nc):
     loss_fn = SemanticSegmentationLoss(model)
     preds = (torch.randn(1, nc, 64, 64, device=f"cuda:{DEVICES[0]}") + 50).half().requires_grad_()
     loss, items = loss_fn(preds, {"semantic_mask": torch.full((1, 64, 64), 255, dtype=torch.long)})
-    assert torch.isfinite(loss).all() and torch.isfinite(items).all()
+    assert torch.isfinite(loss).all() and all(torch.isfinite(x).all() for x in items.values())
     loss.backward()
     assert preds.grad is not None
 
@@ -255,15 +257,15 @@ def test_predict_sam():
 
     # Test predictor
     predictor = SAMPredictor(
-        overrides=dict(
-            conf=0.25,
-            task="segment",
-            mode="predict",
-            imgsz=1024,
-            model=WEIGHTS_DIR / "mobile_sam.pt",
-            device=DEVICES[0],
-            quantize=16,
-        )
+        overrides={
+            "conf": 0.25,
+            "task": "segment",
+            "mode": "predict",
+            "imgsz": 1024,
+            "model": WEIGHTS_DIR / "mobile_sam.pt",
+            "device": DEVICES[0],
+            "quantize": 16,
+        }
     )
     predictor.set_image(ASSETS / "zidane.jpg")
     # predictor(bboxes=[439, 437, 524, 709])

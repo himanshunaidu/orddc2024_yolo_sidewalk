@@ -6,7 +6,6 @@ creator:
     url: https://data.caltech.edu/records/mzrjq-6wc02
 license:
     name: CC-BY-4.0
-    url: https://creativecommons.org/licenses/by/4.0/
 description: Train YOLO image classification models on Caltech-101, a benchmark of 9,144 images across 101 object categories plus a background class, with automatic 80/20 splitting.
 keywords: Caltech-101, dataset, image classification, object recognition, machine learning, computer vision, YOLO, deep learning, AI
 ---
@@ -14,6 +13,8 @@ keywords: Caltech-101, dataset, image classification, object recognition, machin
 # Caltech-101 Dataset
 
 The [Caltech-101](https://data.caltech.edu/records/mzrjq-6wc02) dataset is a classic [image classification](https://www.ultralytics.com/glossary/image-classification) benchmark of 9,144 images spanning 101 object categories plus one background class. Each category holds about 40 to 800 images of real-world objects — animals, vehicles, household items, and people — making it a compact yet challenging benchmark for object recognition models.
+
+Explore [Caltech-101 on Ultralytics Platform](https://platform.ultralytics.com/ultralytics/datasets/caltech101) to preview samples, inspect dataset statistics, and clone it for training.
 
 <p align="center">
   <br>
@@ -80,7 +81,7 @@ Train a YOLO model on Caltech-101 for 100 [epochs](https://www.ultralytics.com/g
 
 The Caltech-101 dataset contains high-quality color images of various objects, providing a well-structured dataset for [image classification](https://www.ultralytics.com/glossary/image-classification) tasks. Here are some examples of images from the dataset:
 
-![Caltech-101 image classification dataset samples](https://cdn.jsdelivr.net/gh/ultralytics/assets@main/docs/caltech101-sample-image.avif)
+![Caltech-101 image classification dataset samples](https://cdn.ul.run/i/c914f41ceb204ba9dc47bd4b80b12d53.avif)
 
 The samples show the variety of categories and the natural, centered framing typical of Caltech-101, which makes it a clean starting point for training robust object recognition models.
 

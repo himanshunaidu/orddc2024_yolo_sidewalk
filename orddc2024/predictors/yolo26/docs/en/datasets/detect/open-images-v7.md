@@ -30,17 +30,17 @@ keywords: Open Images V7, Google dataset, object detection, 601 classes, YOLOv8 
 
 Ultralytics publishes five [YOLOv8](../../models/yolov8.md) models pretrained on Open Images V7, so you can detect its 601 classes without downloading the dataset:
 
-| Model                                                                                     | size<br><sup>(pixels)</sup> | mAP<sup>val<br>50-95</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>A100 TensorRT<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
-| ----------------------------------------------------------------------------------------- | --------------------------- | -------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
-| [YOLOv8n](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n-oiv7.pt) | 640                         | 18.4                       | 142.4                                | 1.21                                      | 3.5                      | 10.5                    |
-| [YOLOv8s](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8s-oiv7.pt) | 640                         | 27.7                       | 183.1                                | 1.40                                      | 11.4                     | 29.7                    |
-| [YOLOv8m](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8m-oiv7.pt) | 640                         | 33.6                       | 408.5                                | 2.26                                      | 26.2                     | 80.6                    |
-| [YOLOv8l](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8l-oiv7.pt) | 640                         | 34.9                       | 596.9                                | 2.43                                      | 44.1                     | 167.4                   |
-| [YOLOv8x](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8x-oiv7.pt) | 640                         | 36.3                       | 860.6                                | 3.56                                      | 68.7                     | 260.6                   |
+| Model                                                          | size<br><sup>(pixels)</sup> | mAP<sup>val<br>50-95</sup> | Speed<br><sup>CPU ONNX<br>(ms)</sup> | Speed<br><sup>A100 TensorRT<br>(ms)</sup> | params<br><sup>(M)</sup> | FLOPs<br><sup>(B)</sup> |
+| -------------------------------------------------------------- | --------------------------- | -------------------------- | ------------------------------------ | ----------------------------------------- | ------------------------ | ----------------------- |
+| [YOLOv8n](https://platform.ultralytics.com/ultralytics/yolov8) | 640                         | 18.4                       | 142.4                                | 1.21                                      | 3.5                      | 10.5                    |
+| [YOLOv8s](https://platform.ultralytics.com/ultralytics/yolov8) | 640                         | 27.7                       | 183.1                                | 1.40                                      | 11.4                     | 29.7                    |
+| [YOLOv8m](https://platform.ultralytics.com/ultralytics/yolov8) | 640                         | 33.6                       | 408.5                                | 2.26                                      | 26.2                     | 80.6                    |
+| [YOLOv8l](https://platform.ultralytics.com/ultralytics/yolov8) | 640                         | 34.9                       | 596.9                                | 2.43                                      | 44.1                     | 167.4                   |
+| [YOLOv8x](https://platform.ultralytics.com/ultralytics/yolov8) | 640                         | 36.3                       | 860.6                                | 3.56                                      | 68.7                     | 260.6                   |
 
 The visualization below shows the range of object classes these models can detect:
 
-![Open Images V7 classes visual](https://cdn.jsdelivr.net/gh/ultralytics/assets@main/docs/open-images-v7-classes-visual.avif)
+![Open Images V7 classes visual](https://cdn.ul.run/i/5f0362a9dd9d720d95f7e3bd2958644f.avif)
 
 You can run [prediction](../../modes/predict.md) or start fine-tuning from these checkpoints as follows.
 
@@ -99,7 +99,7 @@ Open Images V7 supports training and evaluating models across a range of compute
 - **Multimodal learning**: Localized narratives that combine voice, text, and mouse traces pair visual data with rich descriptions.
 - **Zero-shot evaluation**: The extensive class coverage helps assess how models handle objects not seen during training.
 
-To label your own images, train, and manage large-scale datasets in your browser, run the full workflow with [Ultralytics Platform](https://platform.ultralytics.com/).
+To label your own images, train, and manage large-scale datasets in your browser, run the full workflow with [Ultralytics Platform](https://platform.ultralytics.com).
 
 ## Dataset YAML
 
@@ -144,7 +144,7 @@ To train a YOLO26n model on the Open Images V7 dataset for 100 [epochs](https://
 
 The sample below shows the bounding-box, relationship, and mask annotations that Open Images V7 layers on a single image:
 
-![Open Images V7 dataset sample with bounding box annotations](https://cdn.jsdelivr.net/gh/ultralytics/assets@main/docs/oidv7-all-in-one-example-ab.avif)
+![Open Images V7 dataset sample with bounding box annotations](https://cdn.ul.run/i/59c1b35c567ea11c5e69351df7a3ebdf.avif)
 
 ## Citations and Acknowledgments
 

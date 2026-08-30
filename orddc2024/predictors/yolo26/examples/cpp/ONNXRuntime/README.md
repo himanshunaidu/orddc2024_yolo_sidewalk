@@ -2,7 +2,7 @@
 
 <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white"> <img alt="ONNX Runtime" src="https://img.shields.io/badge/ONNX%20Runtime-717272.svg?logo=onnx&logoColor=white"> <img alt="OpenCV" src="https://img.shields.io/badge/OpenCV-5C3EE8.svg?logo=opencv&logoColor=white">
 
-A single C++ application that runs **every [Ultralytics YOLO](https://docs.ultralytics.com/) task and model generation** with [ONNX Runtime](https://onnxruntime.ai/) and [OpenCV](https://opencv.org/). Point it at any exported `.onnx` model — the program reads the task, class names, and input size from the model metadata and picks the right post-processing automatically.
+A single C++ application that runs **every [Ultralytics YOLO](https://docs.ultralytics.com) task and model generation** with [ONNX Runtime](https://onnxruntime.ai/) and [OpenCV](https://opencv.org/). Point it at any exported `.onnx` model — the program reads the task, class names, and input size from the model metadata and picks the right post-processing automatically.
 
 ## ✨ Features
 
@@ -38,6 +38,8 @@ yolo export model=yolo26n-sem.pt format=onnx opset=12  # semantic
 [YOLOv8](https://docs.ultralytics.com/models/yolov8) and [YOLO11](https://docs.ultralytics.com/models/yolo11) grid models work too — the output layout is detected automatically.
 
 See the [Export documentation](https://docs.ultralytics.com/modes/export) for more options.
+
+[YOLOE](https://docs.ultralytics.com/models/yoloe) models must have their vocabulary baked in with `set_classes()` before export — see [YOLOE Export Usage](https://docs.ultralytics.com/models/yoloe#export-usage).
 
 To run a half-precision model, export with `quantize=16` **on a GPU** (on CPU, `quantize=16` is ignored and the export stays FP32). The example detects the FP16 input type and runs it automatically:
 
