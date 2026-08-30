@@ -7,24 +7,26 @@ import tempfile
 from pathlib import Path
 
 from config.backends import BACKENDS
+from orddc2024.predictions.prediction_result import PredictionResult
+
 from .base_predictor import Predictor
 
 
 class Yolov8Predictor(Predictor):
-    """YOLOv8 predictor that runs inference in the dedicated YOLOv8 environment."""
-
-    def __init__(self, framework="yolov8", models_params=None):
+    def __init__(self, framework: str = "yolov8", models_params=None):
         backend = BACKENDS["yolov8"]
-        super().__init__(repo=str(backend.get("repo", "yolov8")), framework=framework)
+
+        super().__init__(
+            repo=str(backend.get("repo", "yolov8")),
+            framework=framework,
+        )
 
         self.backend = backend
         self.python_executable = Path(backend["python"]).expanduser()
         self.worker_script = Path(__file__).with_name("yolov8_worker.py")
         self.models_params = list(models_params or [])
-        self.images = []
 
     def load(self, models_params, images_path):
-        """Register models and images; actual model loading happens in the worker."""
         self.models_params = list(models_params)
         self.models = list(models_params)
         self.images = [
@@ -36,25 +38,21 @@ class Yolov8Predictor(Predictor):
             print(f"Registered YOLOv8 model: {model_param['weight']}")
 
     def load_one_model(self, model_param):
-        """Required by Predictor; process-backed loading is deferred to the worker."""
         self.models.append(model_param)
 
     def predict_one_model(self, model, image):
-        """Required by Predictor; use predict() for process-backed inference."""
         raise RuntimeError(
-            "Yolov8Predictor performs inference in yolov8_worker.py. "
-            "Call predict() instead."
+            "Yolov8Predictor uses yolov8_worker.py. Call predict()."
         )
 
-    def predict(self):
-        """Run all YOLOv8 models in one dedicated backend subprocess."""
+    def predict(self) -> list[PredictionResult]:
         if not self.models_params:
             raise ValueError("No YOLOv8 model configurations have been loaded.")
         if not self.images:
             raise ValueError("No images have been loaded.")
         if not self.python_executable.is_file():
             raise FileNotFoundError(
-                f"YOLOv8 interpreter not found: {self.python_executable}"
+                f"YOLOv8 Python interpreter not found: {self.python_executable}"
             )
         if not self.worker_script.is_file():
             raise FileNotFoundError(
@@ -72,44 +70,41 @@ class Yolov8Predictor(Predictor):
             request_path = temp_dir / "request.json"
             output_path = temp_dir / "predictions.json"
 
-            request_path.write_text(json.dumps(request, indent=2), encoding="utf-8")
+            request_path.write_text(
+                json.dumps(request, indent=2),
+                encoding="utf-8",
+            )
 
-            command = [
-                str(self.python_executable),
-                str(self.worker_script),
-                "--request",
-                str(request_path),
-                "--output",
-                str(output_path),
-            ]
-
-            env = os.environ.copy()
-            env["PYTHONUNBUFFERED"] = "1"
-
-            print("=" * 72)
-            print("Launching YOLOv8 backend")
-            print(f"Python: {self.python_executable}")
-            print(f"Models: {len(self.models_params)}")
-            print(f"Images: {len(self.images)}")
-            print("=" * 72)
-
-            subprocess.run(command, env=env, check=True)
+            subprocess.run(
+                [
+                    str(self.python_executable),
+                    str(self.worker_script),
+                    "--request",
+                    str(request_path),
+                    "--output",
+                    str(output_path),
+                ],
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                check=True,
+            )
 
             if not output_path.is_file():
                 raise RuntimeError(
-                    "YOLOv8 backend completed without producing predictions."
+                    "YOLOv8 backend completed without creating predictions."
                 )
 
-            result = json.loads(output_path.read_text(encoding="utf-8"))
+            worker_result = json.loads(
+                output_path.read_text(encoding="utf-8")
+            )
 
-        if result["images"] != self.images:
+        if worker_result["images"] != self.images:
             raise RuntimeError(
                 "YOLOv8 backend returned predictions in a different image order."
             )
 
-        boxes_list = result["boxes"]
-        scores_list = result["scores"]
-        labels_list = result["labels"]
+        boxes_list = worker_result["boxes"]
+        scores_list = worker_result["scores"]
+        labels_list = worker_result["labels"]
 
         if not (
             len(boxes_list)
@@ -121,4 +116,28 @@ class Yolov8Predictor(Predictor):
                 "YOLOv8 backend returned an unexpected number of model outputs."
             )
 
-        return boxes_list, scores_list, labels_list
+        return [
+            PredictionResult(
+                images=list(self.images),
+                boxes=boxes,
+                scores=scores,
+                labels=labels,
+                metadata={
+                    "backend": "yolov8",
+                    "framework": self.framework,
+                    "repo": self.repo,
+                    "model_index": model_index,
+                    "weight": model_param["weight"],
+                    "inference": dict(model_param),
+                },
+            )
+            for model_index, (model_param, boxes, scores, labels)
+            in enumerate(
+                zip(
+                    self.models_params,
+                    boxes_list,
+                    scores_list,
+                    labels_list,
+                )
+            )
+        ]

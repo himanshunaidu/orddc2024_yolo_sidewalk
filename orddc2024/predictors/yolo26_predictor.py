@@ -12,18 +12,18 @@ from orddc2024.predictions.prediction_result import PredictionResult
 from .base_predictor import Predictor
 
 
-class Yolov8Predictor(Predictor):
-    def __init__(self, framework: str = "yolov8", models_params=None):
-        backend = BACKENDS["yolov8"]
+class Yolo26Predictor(Predictor):
+    def __init__(self, framework: str = "yolo26", models_params=None):
+        backend = BACKENDS["yolo26"]
 
         super().__init__(
-            repo=str(backend.get("repo", "yolov8")),
+            repo=str(backend.get("repo", "yolo26")),
             framework=framework,
         )
 
         self.backend = backend
         self.python_executable = Path(backend["python"]).expanduser()
-        self.worker_script = Path(__file__).with_name("yolov8_worker.py")
+        self.worker_script = Path(__file__).with_name("yolo26_worker.py")
         self.models_params = list(models_params or [])
 
     def load(self, models_params, images_path):
@@ -35,28 +35,28 @@ class Yolov8Predictor(Predictor):
         ]
 
         for model_param in self.models_params:
-            print(f"Registered YOLOv8 model: {model_param['weight']}")
+            print(f"Registered YOLO26 model: {model_param['weight']}")
 
     def load_one_model(self, model_param):
         self.models.append(model_param)
 
     def predict_one_model(self, model, image):
         raise RuntimeError(
-            "Yolov8Predictor uses yolov8_worker.py. Call predict()."
+            "Yolo26Predictor uses yolo26_worker.py. Call predict()."
         )
 
     def predict(self) -> list[PredictionResult]:
         if not self.models_params:
-            raise ValueError("No YOLOv8 model configurations have been loaded.")
+            raise ValueError("No YOLO26 model configurations have been loaded.")
         if not self.images:
             raise ValueError("No images have been loaded.")
         if not self.python_executable.is_file():
             raise FileNotFoundError(
-                f"YOLOv8 Python interpreter not found: {self.python_executable}"
+                f"YOLO26 Python interpreter not found: {self.python_executable}"
             )
         if not self.worker_script.is_file():
             raise FileNotFoundError(
-                f"YOLOv8 worker script not found: {self.worker_script}"
+                f"YOLO26 worker script not found: {self.worker_script}"
             )
 
         request = {
@@ -65,7 +65,7 @@ class Yolov8Predictor(Predictor):
             "images": self.images,
         }
 
-        with tempfile.TemporaryDirectory(prefix="orddc_yolov8_") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="orddc_yolo26_") as temp_dir:
             temp_dir = Path(temp_dir)
             request_path = temp_dir / "request.json"
             output_path = temp_dir / "predictions.json"
@@ -90,7 +90,7 @@ class Yolov8Predictor(Predictor):
 
             if not output_path.is_file():
                 raise RuntimeError(
-                    "YOLOv8 backend completed without creating predictions."
+                    "YOLO26 backend completed without creating predictions."
                 )
 
             worker_result = json.loads(
@@ -99,7 +99,7 @@ class Yolov8Predictor(Predictor):
 
         if worker_result["images"] != self.images:
             raise RuntimeError(
-                "YOLOv8 backend returned predictions in a different image order."
+                "YOLO26 backend returned predictions in a different image order."
             )
 
         boxes_list = worker_result["boxes"]
@@ -113,7 +113,7 @@ class Yolov8Predictor(Predictor):
             == len(self.models_params)
         ):
             raise RuntimeError(
-                "YOLOv8 backend returned an unexpected number of model outputs."
+                "YOLO26 backend returned an unexpected number of model outputs."
             )
 
         return [
@@ -123,7 +123,7 @@ class Yolov8Predictor(Predictor):
                 scores=scores,
                 labels=labels,
                 metadata={
-                    "backend": "yolov8",
+                    "backend": "yolo26",
                     "framework": self.framework,
                     "repo": self.repo,
                     "model_index": model_index,
