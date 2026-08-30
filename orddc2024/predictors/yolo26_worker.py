@@ -4,8 +4,6 @@ import argparse
 import json
 from pathlib import Path
 
-# IMPORTANT:
-# This import happens only inside the dedicated YOLO26 subprocess.
 from ultralytics import YOLO
 
 
@@ -27,7 +25,6 @@ def predict_one_model(model_param, images):
     imgsz = int(model_param.get("img_size", model_param.get("imgsz", 640)))
     augment = bool(model_param.get("augment", False))
     agnostic_nms = bool(model_param.get("agnostic_nms", False))
-    label_offset = int(model_param.get("label_offset", 1))
 
     predict_kwargs = {
         "source": images,
@@ -40,37 +37,26 @@ def predict_one_model(model_param, images):
         "stream": False,
     }
 
-    # Optional settings are forwarded only when explicitly configured.
     for key in ("device", "max_det", "half", "batch"):
         if key in model_param and model_param[key] is not None:
             predict_kwargs[key] = model_param[key]
 
-    print("-" * 72)
-    print(f"Loading YOLO26 model: {weight}")
+    print(f"Loading YOLOv8 model: {weight}")
     model = YOLO(weight)
-
-    print(
-        f"Predicting {len(images)} images "
-        f"(imgsz={imgsz}, conf={conf}, iou={iou})"
-    )
-
     results = model.predict(**predict_kwargs)
+
+    if len(results) != len(images):
+        raise RuntimeError(
+            f"Expected {len(images)} results but received {len(results)}."
+        )
 
     model_boxes = []
     model_scores = []
     model_labels = []
 
-    if len(results) != len(images):
-        raise RuntimeError(
-            f"Expected {len(images)} prediction results but received {len(results)}."
-        )
-
-    for image_path, result in zip(images, results):
+    for result in results:
         image_height, image_width = result.orig_shape
-
-        boxes = []
-        scores = []
-        labels = []
+        boxes, scores, labels = [], [], []
 
         if result.boxes is not None and len(result.boxes) > 0:
             xyxy = result.boxes.xyxy.detach().cpu().tolist()
@@ -79,14 +65,11 @@ def predict_one_model(model_param, images):
 
             for box, score, class_id in zip(xyxy, confs, classes):
                 boxes.append(
-                    normalize_box(
-                        box,
-                        img_width=image_width,
-                        img_height=image_height,
-                    )
+                    normalize_box(box, image_width, image_height)
                 )
                 scores.append(float(score))
-                labels.append(int(class_id) + label_offset)
+                # Canonical PredictionResult contract: zero-based labels.
+                labels.append(int(class_id))
 
         model_boxes.append(boxes)
         model_scores.append(scores)
@@ -97,26 +80,13 @@ def predict_one_model(model_param, images):
 
 def run(request):
     images = request["images"]
-    models_params = request["models"]
 
     boxes_list = []
     scores_list = []
     labels_list = []
 
-    # Deliberately sequential inside one backend process. This avoids having
-    # several models contend for the same GPU while still amortizing process
-    # startup and Ultralytics import overhead across all YOLO26 models.
-    for model_index, model_param in enumerate(models_params, start=1):
-        print(
-            f"YOLO26 model {model_index}/{len(models_params)}: "
-            f"{model_param['weight']}"
-        )
-
-        boxes, scores, labels = predict_one_model(
-            model_param=model_param,
-            images=images,
-        )
-
+    for model_param in request["models"]:
+        boxes, scores, labels = predict_one_model(model_param, images)
         boxes_list.append(boxes)
         scores_list.append(scores)
         labels_list.append(labels)
@@ -129,31 +99,20 @@ def run(request):
     }
 
 
-def parse_args():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
     parser.add_argument("--output", required=True)
-    return parser.parse_args()
+    args = parser.parse_args()
 
-
-def main():
-    args = parse_args()
-
-    request_path = Path(args.request)
-    output_path = Path(args.output)
-
-    request = json.loads(request_path.read_text(encoding="utf-8"))
+    request = json.loads(
+        Path(args.request).read_text(encoding="utf-8")
+    )
     result = run(request)
 
+    output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(result),
-        encoding="utf-8",
-    )
-
-    print("=" * 72)
-    print(f"YOLO26 predictions written to: {output_path}")
-    print("=" * 72)
+    output_path.write_text(json.dumps(result), encoding="utf-8")
 
 
 if __name__ == "__main__":
