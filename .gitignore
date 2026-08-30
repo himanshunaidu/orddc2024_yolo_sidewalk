@@ -24,3 +24,9 @@ __pycache__/
 *.so
 dist/
 build/
+
+config/backends.py
+
+orddc2024/predictors/archive/
+orddc2024/predictors/yolo26/
+orddc2024/predictors/yolov8/
