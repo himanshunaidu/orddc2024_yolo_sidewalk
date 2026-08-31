@@ -165,7 +165,8 @@ def train_model_one_stage(
     print(f"Starting training stage with run name: {run_name} {weights}")
     model = YOLO(weights)
     
-    device = args.device if torch.cuda.is_available() else "cpu"
+    # device = args.device if torch.cuda.is_available() else "cpu"
+    device = args.device
     
     freeze_resolved = resolve_freeze_setting(model, freeze)
     
@@ -187,7 +188,8 @@ def train_model_one_stage(
         task="detect",
         epochs=epochs,
         imgsz=args.imgsz,
-        device=args.device if torch.cuda.is_available() else "cpu",
+        # device=args.device if torch.cuda.is_available() else "cpu",
+        device=device,
         batch=args.batch,
         project=project,
         name=run_name,

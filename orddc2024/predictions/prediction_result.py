@@ -99,7 +99,7 @@ class PredictionResult:
                         f"{image_name}: xyxyn coordinates must be in [0, 1]"
                     )
                 x1, y1, x2, y2 = values
-                if x2 <= x1 or y2 <= y1:
+                if x2 < x1 or y2 < y1:
                     raise ValueError(
                         f"{image_name}: box must have positive width/height"
                     )
