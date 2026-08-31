@@ -647,13 +647,13 @@ class CustomValidator(BaseValidator):
                 tensor[:, 2]
                 - tensor[:, 0]
             )
-            <= 0
+            < 0
         ).any() or (
             (
                 tensor[:, 3]
                 - tensor[:, 1]
             )
-            <= 0
+            < 0
         ).any():
             raise ValueError(
                 f"{source}: every box must have positive width and height"
