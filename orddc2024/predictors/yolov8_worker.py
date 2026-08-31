@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from ultralytics import YOLO
+from tqdm import tqdm
 
 
 def normalize_box(box, img_width, img_height):
@@ -25,16 +26,18 @@ def predict_one_model(model_param, images):
     imgsz = int(model_param.get("img_size", model_param.get("imgsz", 640)))
     augment = bool(model_param.get("augment", False))
     agnostic_nms = bool(model_param.get("agnostic_nms", False))
+    
+    batch_size = int(model_param.get("batch", 1))
 
     predict_kwargs = {
-        "source": images,
+        # "source": images,
         "conf": conf,
         "iou": iou,
         "imgsz": imgsz,
         "augment": augment,
         "agnostic_nms": agnostic_nms,
         "verbose": False,
-        "stream": False,
+        "stream": True,
     }
 
     for key in ("device", "max_det", "half", "batch"):
@@ -43,38 +46,55 @@ def predict_one_model(model_param, images):
 
     print(f"Loading YOLOv8 model: {weight}")
     model = YOLO(weight)
-    results = model.predict(**predict_kwargs)
+    # results = model.predict(**predict_kwargs)
 
-    if len(results) != len(images):
-        raise RuntimeError(
-            f"Expected {len(images)} results but received {len(results)}."
-        )
+    # if len(results) != len(images):
+    #     raise RuntimeError(
+    #         f"Expected {len(images)} results but received {len(results)}."
+    #     )
 
     model_boxes = []
     model_scores = []
     model_labels = []
+    
+    total_results = 0
+    for start_idx in tqdm(range(0, len(images), batch_size), desc="Processing batches"):
+        batch_images = images[start_idx:start_idx + batch_size]
+        results = model.predict(source=batch_images, **predict_kwargs)
 
-    for result in results:
-        image_height, image_width = result.orig_shape
-        boxes, scores, labels = [], [], []
+        batch_result_count = 0
+        
+        for result in results:
+            image_height, image_width = result.orig_shape
+            boxes, scores, labels = [], [], []
 
-        if result.boxes is not None and len(result.boxes) > 0:
-            xyxy = result.boxes.xyxy.detach().cpu().tolist()
-            confs = result.boxes.conf.detach().cpu().tolist()
-            classes = result.boxes.cls.detach().cpu().tolist()
+            if result.boxes is not None and len(result.boxes) > 0:
+                xyxy = result.boxes.xyxy.detach().cpu().tolist()
+                confs = result.boxes.conf.detach().cpu().tolist()
+                classes = result.boxes.cls.detach().cpu().tolist()
 
-            for box, score, class_id in zip(xyxy, confs, classes):
-                boxes.append(
-                    normalize_box(box, image_width, image_height)
-                )
-                scores.append(float(score))
-                # Canonical PredictionResult contract: zero-based labels.
-                labels.append(int(class_id))
+                for box, score, class_id in zip(xyxy, confs, classes):
+                    boxes.append(
+                        normalize_box(box, image_width, image_height)
+                    )
+                    scores.append(float(score))
+                    # Canonical PredictionResult contract: zero-based labels.
+                    labels.append(int(class_id))
 
-        model_boxes.append(boxes)
-        model_scores.append(scores)
-        model_labels.append(labels)
-
+            model_boxes.append(boxes)
+            model_scores.append(scores)
+            model_labels.append(labels)
+            total_results += 1
+            batch_result_count += 1
+        # if batch_result_count != batch_size:
+        #     raise RuntimeError(
+        #         f"Expected batch size of {batch_size} but received {batch_result_count}."
+        #     )
+    if total_results != len(images):
+        raise RuntimeError(
+            f"Expected {len(images)} results but received {total_results}."
+        )
+    
     return model_boxes, model_scores, model_labels
 
 
