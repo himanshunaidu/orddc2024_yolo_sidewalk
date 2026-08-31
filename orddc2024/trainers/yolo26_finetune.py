@@ -131,11 +131,12 @@ def train(args: argparse.Namespace) -> None:
 
     model = YOLO(args.weights)
 
-    device = (
-        args.device
-        if torch.cuda.is_available()
-        else "cpu"
-    )
+    # device = (
+    #     args.device
+    #     if torch.cuda.is_available()
+    #     else "cpu"
+    # )
+    device = args.device
 
     extra_args = parse_extra_args(args.extra_args_json)
 
