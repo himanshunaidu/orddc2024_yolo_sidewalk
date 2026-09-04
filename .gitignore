@@ -30,3 +30,4 @@ config/backends.py
 
 orddc2024/predictors/archive/
 orddc2024/predictors/yolov8/
+orddc2024/predictors/yolo26/
