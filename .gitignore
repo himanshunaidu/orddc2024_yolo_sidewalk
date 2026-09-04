@@ -4,7 +4,8 @@ RDD2022/
 *.vscode/
 *.db
 
-data/
+/data/
+/train/data/
 *.zip
 *.pt
 runs/
