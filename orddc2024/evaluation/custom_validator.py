@@ -28,8 +28,6 @@ class CustomValidator(BaseValidator):
     """
     Evaluate already-postprocessed object-detection predictions.
 
-    The primary prediction input is PredictionResult.
-
     PredictionResult contract:
         - boxes are normalized XYXY
         - labels are zero-based
@@ -45,8 +43,13 @@ class CustomValidator(BaseValidator):
         - a sequence aligned with PredictionResult.images, or
         - a mapping keyed by full path, filename, or stem.
 
-    The evaluator does not load or run a model. It reuses Ultralytics'
-    matching, DetMetrics, ConfusionMatrix, and plotting behavior.
+    When plots=True, Ultralytics DetMetrics/ap_per_class generates:
+        - PR_curve.png
+        - F1_curve.png
+        - P_curve.png
+        - R_curve.png
+
+    Confusion-matrix plots are generated separately in finalize_metrics().
     """
 
     def __init__(
@@ -126,12 +129,6 @@ class CustomValidator(BaseValidator):
     ) -> ValidationResult:
         """
         Evaluate one PredictionResult against ground truth.
-
-        PredictionResult already guarantees:
-            prediction_box_format = "xyxyn"
-            prediction_label_offset = 0
-
-        so those no longer need to be supplied by callers.
         """
         image_paths = [
             Path(path)
@@ -209,9 +206,7 @@ class CustomValidator(BaseValidator):
                 target_cls.detach().cpu().numpy()
             )
 
-            # Confusion matrix matching must stay image-local. Concatenating
-            # all boxes first would allow boxes from different images to be
-            # compared against one another.
+            # Confusion-matrix matching must stay image-local.
             self._update_confusion_matrix(
                 pred_boxes=pred_boxes,
                 pred_conf=pred_conf,
@@ -243,7 +238,10 @@ class CustomValidator(BaseValidator):
             axis=0,
         )
 
-        # Deliberately process all accumulated statistics once.
+        # For the Ultralytics 8.2.x DetMetrics implementation used by this
+        # project, plot/save_dir/on_plot are configured on the DetMetrics
+        # instance in reset(). Calling process() here therefore computes both
+        # the metrics and the standard PR/F1/P/R curves.
         self.metrics.process(
             tp=tp,
             conf=conf,
@@ -251,12 +249,20 @@ class CustomValidator(BaseValidator):
             target_cls=target_cls,
         )
 
+        per_class = self._extract_per_class_metrics(
+            target_cls=target_cls,
+        )
+        
+        average_detections_per_image = self._average_detections_per_image(tp)
+
         self.finalize_metrics()
 
         return ValidationResult(
             overall=dict(self.metrics.results_dict),
             confusion_matrix=self.confusion_matrix.matrix.copy(),
             metrics=self.metrics,
+            per_class=per_class,
+            average_detections_per_image=average_detections_per_image,
         )
 
     def evaluate_predictor(
@@ -268,12 +274,6 @@ class CustomValidator(BaseValidator):
         ground_truth_box_format: BoxFormat = "xywhn",
         ground_truth_label_offset: int = 0,
     ) -> ValidationResult:
-        """
-        Run a Predictor and evaluate one of its PredictionResult outputs.
-
-        Predictors now return list[PredictionResult] because one backend
-        subprocess may contain multiple models.
-        """
         prediction_results = predictor.predict()
 
         if not prediction_results:
@@ -302,12 +302,6 @@ class CustomValidator(BaseValidator):
         ground_truth_box_format: BoxFormat = "xywhn",
         ground_truth_label_offset: int = 0,
     ) -> ValidationResult:
-        """
-        Load a cached .npz PredictionResult and evaluate it.
-
-        This is useful for HPO analysis and later re-evaluation without
-        loading the original model.
-        """
         predictions = PredictionResult.load_npz(
             prediction_cache
         )
@@ -323,8 +317,14 @@ class CustomValidator(BaseValidator):
         """Reset evaluator state before a validation run."""
         self.seen = 0
 
+        # Ultralytics 8.2.x DetMetrics owns the AP-curve plotting options.
+        # With plot=True, DetMetrics.process() calls ap_per_class(), which
+        # writes PR_curve.png, F1_curve.png, P_curve.png, and R_curve.png.
         self.metrics = DetMetrics(
-            names=self.names
+            save_dir=self.save_dir,
+            plot=bool(self.args.plots),
+            on_plot=self.on_plot,
+            names=self.names,
         )
         self.metrics.names = self.names
 
@@ -343,6 +343,96 @@ class CustomValidator(BaseValidator):
 
         self.plots = {}
 
+    def _extract_per_class_metrics(
+        self,
+        *,
+        target_cls: np.ndarray,
+    ) -> dict[int, dict[str, Any]]:
+        """
+        Return Ultralytics class-wise P/R/F1/AP metrics.
+
+        Precision and recall use the same global max-mean-F1 operating point
+        chosen internally by Ultralytics ap_per_class(). AP50 and AP50-95 use
+        the complete confidence-ranked precision-recall curves.
+
+        DetMetrics.class_result(i) indexes metric rows, while
+        DetMetrics.ap_class_index maps those rows back to actual class IDs.
+        """
+        target_ids = np.asarray(
+            target_cls,
+            dtype=np.int64,
+        ).reshape(-1)
+
+        target_counts = np.bincount(
+            target_ids,
+            minlength=self.nc,
+        )
+
+        per_class: dict[int, dict[str, Any]] = {
+            class_id: {
+                "class_id": class_id,
+                "class_name": self.names[class_id],
+                "targets": int(target_counts[class_id]),
+                "precision": None,
+                "recall": None,
+                "f1": None,
+                "mAP50": None,
+                "mAP50-95": None,
+            }
+            for class_id in range(self.nc)
+        }
+
+        ap_class_index = np.asarray(
+            self.metrics.ap_class_index,
+            dtype=np.int64,
+        ).reshape(-1)
+
+        for metric_index, class_id_value in enumerate(
+            ap_class_index
+        ):
+            class_id = int(class_id_value)
+
+            precision, recall, ap50, ap50_95 = (
+                self.metrics.class_result(
+                    metric_index
+                )
+            )
+
+            precision = float(precision)
+            recall = float(recall)
+            ap50 = float(ap50)
+            ap50_95 = float(ap50_95)
+
+            denominator = precision + recall
+            f1 = (
+                2.0 * precision * recall / denominator
+                if denominator > 0.0
+                else 0.0
+            )
+
+            per_class[class_id].update(
+                {
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1,
+                    "mAP50": ap50,
+                    "mAP50-95": ap50_95,
+                }
+            )
+
+        return per_class
+    
+    def _average_detections_per_image(
+        self,
+        correct: np.ndarray,
+    ) -> float:
+        """
+        Compute the average number of correct detections per image.
+        """
+        if correct.size == 0:
+            return 0.0
+        return float(correct.sum() / correct.shape[0])
+
     def _process_batch(
         self,
         pred_boxes: torch.Tensor,
@@ -350,9 +440,6 @@ class CustomValidator(BaseValidator):
         target_boxes: torch.Tensor,
         target_cls: torch.Tensor,
     ) -> np.ndarray:
-        """
-        Create the [num_predictions, 10] TP matrix used by DetMetrics.
-        """
         num_predictions = int(
             pred_cls.shape[0]
         )
@@ -391,9 +478,6 @@ class CustomValidator(BaseValidator):
         target_boxes: torch.Tensor,
         target_cls: torch.Tensor,
     ) -> None:
-        """
-        Update the confusion matrix for one image.
-        """
         detections = torch.cat(
             [
                 pred_boxes,
@@ -411,7 +495,10 @@ class CustomValidator(BaseValidator):
 
     def finalize_metrics(self) -> None:
         """
-        Attach plots and the confusion matrix to the metrics object.
+        Plot confusion matrices and attach evaluator state to DetMetrics.
+
+        PR/F1/P/R curves are already generated by DetMetrics.process() when
+        plots=True.
         """
         if self.args.plots:
             for normalize in (
@@ -478,10 +565,6 @@ class CustomValidator(BaseValidator):
         torch.Tensor,
         torch.Tensor,
     ]:
-        """
-        Convert one image's canonical PredictionResult data to tensors and
-        apply evaluator-side confidence/max_det filtering.
-        """
         boxes = self._convert_boxes_to_xyxyn(
             predictions.boxes[image_index],
             box_format="xyxyn",
@@ -563,9 +646,6 @@ class CustomValidator(BaseValidator):
         image_height: int,
         source: str,
     ) -> torch.Tensor:
-        """
-        Convert supported box formats to normalized XYXY.
-        """
         tensor = torch.as_tensor(
             boxes,
             dtype=torch.float32,
@@ -913,8 +993,6 @@ class CustomValidator(BaseValidator):
                     f"Label file not found: {label_path}"
                 )
 
-            # Full path avoids collisions when different dataset folders
-            # contain images with the same filename.
             ground_truths[
                 str(image_path)
             ] = {
