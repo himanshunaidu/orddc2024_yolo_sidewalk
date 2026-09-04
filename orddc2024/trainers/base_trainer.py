@@ -27,7 +27,7 @@ class TrainingConfig:
 
     option: str = "A_full_orddc"
 
-    epochs: int = 100
+    epochs: int = 200
     imgsz: int = 640
     batch: int = 32
 
