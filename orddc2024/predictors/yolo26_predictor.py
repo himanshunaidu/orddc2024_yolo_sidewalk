@@ -1,3 +1,4 @@
+# YOLO26 predictor for the ORDDC2024 project. Uses yolo26_worker.py for inference.
 from __future__ import annotations
 
 import json

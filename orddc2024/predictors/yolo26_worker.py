@@ -1,3 +1,4 @@
+# YOLO26 worker script for the ORDDC2024 project. Performs inference using the YOLOv8 model.
 from __future__ import annotations
 
 import argparse
